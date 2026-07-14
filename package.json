@@ -1,0 +1,25 @@
+{
+  "name": "frontmatter-timestamps",
+  "version": "0.1.0",
+  "description": "Obsidian plugin for syncing frontmatter created and updated timestamps.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "frontmatter",
+    "timestamps"
+  ],
+  "author": "Pat",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.28.1",
+    "obsidian": "^1.5.12",
+    "typescript": "^5.4.2"
+  }
+}
