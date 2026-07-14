@@ -1,18 +1,16 @@
 import { TAbstractFile, TFile } from "obsidian";
 import { TimestampPluginSettings } from "./settings";
 
-export const ALWAYS_IGNORED_PATHS = [".obsidian"];
-
 export function isMarkdownFile(file: TAbstractFile | null): file is TFile {
   return file instanceof TFile && file.extension === "md";
 }
 
-export function shouldProcessFile(file: TFile, settings: TimestampPluginSettings): boolean {
+export function shouldProcessFile(file: TFile, settings: TimestampPluginSettings, configDir: string): boolean {
   if (file.extension !== "md") {
     return false;
   }
 
-  return ![...ALWAYS_IGNORED_PATHS, ...settings.ignoredPaths].some((ignored) => pathMatchesIgnoredPath(file.path, ignored));
+  return ![configDir, ...settings.ignoredPaths].some((ignored) => pathMatchesIgnoredPath(file.path, ignored));
 }
 
 export function normalizeIgnoredPath(path: string): string {

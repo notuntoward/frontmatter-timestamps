@@ -1,3 +1,39 @@
+.frontmatter-timestamps-rename-card {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  margin: 10px 0;
+  padding: 12px;
+}
+
+.frontmatter-timestamps-rename-header {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.frontmatter-timestamps-rename-title {
+  font-weight: 600;
+}
+
+.frontmatter-timestamps-rename-description {
+  font-size: 12px;
+  margin: 6px 0 8px;
+  opacity: 0.75;
+}
+
+.frontmatter-timestamps-rename-input {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.frontmatter-timestamps-rename-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .frontmatter-timestamps-ignored-paths {
   align-items: stretch;
   box-sizing: border-box;

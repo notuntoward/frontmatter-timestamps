@@ -9,7 +9,7 @@ import {
   normalizePath
 } from "obsidian";
 import FrontmatterTimestampsPlugin from "./main";
-import { ALWAYS_IGNORED_PATHS, normalizeIgnoredPath } from "./filters";
+import { normalizeIgnoredPath } from "./filters";
 import type { TimestampPropertyKind } from "./timestamp-service";
 
 export interface TimestampPluginSettings {
@@ -138,45 +138,29 @@ export class TimestampSettingTab extends PluginSettingTab {
     const propertyKind: TimestampPropertyKind = key === "createdField" ? "created" : "updated";
 
     const cardEl = containerEl.createDiv({ cls: "frontmatter-timestamps-rename-card" });
-    cardEl.style.background = "var(--background-secondary)";
-    cardEl.style.border = "1px solid var(--background-modifier-border)";
-    cardEl.style.borderRadius = "8px";
-    cardEl.style.padding = "12px";
-    cardEl.style.margin = "10px 0";
 
     const headerEl = cardEl.createDiv({ cls: "frontmatter-timestamps-rename-header" });
-    headerEl.style.display = "flex";
-    headerEl.style.alignItems = "center";
-    headerEl.style.gap = "8px";
 
     const iconEl = headerEl.createSpan();
     setIcon(iconEl, key === "createdField" ? "calendar-plus" : "refresh-cw");
-    headerEl.createEl("div", { text: name }).style.fontWeight = "600";
+    headerEl.createEl("div", { text: name, cls: "frontmatter-timestamps-rename-title" });
 
     const descriptionEl = cardEl.createDiv({
+      cls: "frontmatter-timestamps-rename-description",
       text: "Renaming this property previews and applies a global frontmatter key rename. Typing does not change notes."
     });
-    descriptionEl.style.fontSize = "12px";
-    descriptionEl.style.opacity = "0.75";
-    descriptionEl.style.margin = "6px 0 8px";
 
     const inputEl = cardEl.createEl("input", {
       type: "text",
       value: draftName
     });
-    inputEl.addClass("text-input");
-    inputEl.style.width = "100%";
-    inputEl.style.boxSizing = "border-box";
+    inputEl.addClasses(["text-input", "frontmatter-timestamps-rename-input"]);
     inputEl.placeholder = fallback;
     inputEl.addEventListener("input", () => {
       draftName = inputEl.value;
     });
 
     const buttonsEl = cardEl.createDiv({ cls: "frontmatter-timestamps-rename-buttons" });
-    buttonsEl.style.display = "flex";
-    buttonsEl.style.flexWrap = "wrap";
-    buttonsEl.style.gap = "8px";
-    buttonsEl.style.marginTop = "8px";
 
     const applyButton = buttonsEl.createEl("button", { text: "Apply rename..." });
     applyButton.addEventListener("click", async () => {
@@ -215,7 +199,7 @@ export class TimestampSettingTab extends PluginSettingTab {
   private displayIgnoredPaths(containerEl: HTMLElement): void {
     const setting = new Setting(containerEl)
       .setName("Ignored paths")
-      .setDesc(`Add vault folders or files to skip. Internal paths such as ${ALWAYS_IGNORED_PATHS.join(", ")} are always ignored.`);
+      .setDesc(`Add vault folders or files to skip. The active vault configuration folder (${this.app.vault.configDir}) is always ignored.`);
 
     setting.controlEl.addClass("frontmatter-timestamps-ignored-paths");
 
@@ -248,7 +232,7 @@ export class TimestampSettingTab extends PluginSettingTab {
         return;
       }
 
-      if (ALWAYS_IGNORED_PATHS.includes(normalized)) {
+      if (normalized === normalizeIgnoredPath(this.app.vault.configDir)) {
         new Notice(`${normalized} is always ignored.`);
         inputEl.value = "";
         return;
@@ -323,7 +307,7 @@ class IgnoredPathSuggest {
       return [];
     }
 
-    const ignored = new Set([...this.getIgnoredPaths(), ...ALWAYS_IGNORED_PATHS]);
+    const ignored = new Set([...this.getIgnoredPaths(), normalizeIgnoredPath(this.app.vault.configDir)]);
     const paths = this.getVaultPaths().filter((path) => !ignored.has(path));
     const fuzzySearch = prepareFuzzySearch(normalizedQuery);
     return paths.filter((path) => fuzzySearch(path)).slice(0, this.limit);

@@ -10,7 +10,7 @@ import { formatTimestampForPropertyType } from "./format";
 import { isMarkdownFile, shouldProcessFile } from "./filters";
 import type { TimestampPluginSettings } from "./settings";
 
-type Timer = ReturnType<typeof setTimeout>;
+type Timer = number;
 export type TimestampPropertyKind = "created" | "updated";
 
 export interface TimestampRenameRequest {
@@ -61,14 +61,14 @@ export class TimestampService {
 
   destroy(): void {
     for (const timer of this.debounceTimers.values()) {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
     }
     this.debounceTimers.clear();
     this.selfWrites.clear();
   }
 
   async handleCreate(file: TAbstractFile): Promise<void> {
-    if (!isMarkdownFile(file) || !shouldProcessFile(file, this.getSettings())) {
+    if (!isMarkdownFile(file) || !shouldProcessFile(file, this.getSettings(), this.app.vault.configDir)) {
       return;
     }
 
@@ -81,7 +81,7 @@ export class TimestampService {
   }
 
   handleModify(file: TAbstractFile): void {
-    if (!isMarkdownFile(file) || !shouldProcessFile(file, this.getSettings())) {
+    if (!isMarkdownFile(file) || !shouldProcessFile(file, this.getSettings(), this.app.vault.configDir)) {
       return;
     }
 
@@ -102,10 +102,10 @@ export class TimestampService {
 
     const existingTimer = this.debounceTimers.get(file.path);
     if (existingTimer) {
-      clearTimeout(existingTimer);
+      window.clearTimeout(existingTimer);
     }
 
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       this.debounceTimers.delete(file.path);
       void this.writeTimestamps(file, {
         includeCreated: true,
@@ -258,9 +258,6 @@ export class TimestampService {
     }
 
     new Notice(`Rename complete. Changed: ${result.changed}. Skipped: ${result.skipped}. Failed: ${result.failed}.`);
-    if (result.reasons.length > 0) {
-      console.info("Frontmatter Timestamps rename details", result.reasons);
-    }
     return result;
   }
 
@@ -314,7 +311,6 @@ export class TimestampService {
       } catch (error) {
         result.failed += 1;
         result.reasons.push(`${entry.file.path}: ${error instanceof Error ? error.message : String(error)}`);
-        console.error("Frontmatter Timestamps malformed datetime cleanup failed", entry.file.path, error);
         this.selfWrites.delete(entry.file.path);
       } finally {
         if (!fileChanged) {
@@ -324,14 +320,11 @@ export class TimestampService {
     }
 
     new Notice(`Malformed datetime cleanup complete. Changed: ${result.changed}. Skipped: ${result.skipped}. Failed: ${result.failed}.`);
-    if (result.reasons.length > 0) {
-      console.info("Frontmatter Timestamps malformed datetime cleanup details", result.reasons);
-    }
     return result;
   }
 
   private async updateFolderTimestamps(folder: TFolder, previewOnly: boolean): Promise<TimestampUpdateResult> {
-    const files = this.collectMarkdownFiles(folder).filter((file) => shouldProcessFile(file, this.getSettings()));
+    const files = this.collectMarkdownFiles(folder).filter((file) => shouldProcessFile(file, this.getSettings(), this.app.vault.configDir));
     const result: TimestampUpdateResult = {
       checked: files.length,
       changed: 0,
@@ -372,7 +365,7 @@ export class TimestampService {
     }
   ): Promise<boolean> {
     const settings = this.getSettings();
-    if (!shouldProcessFile(file, settings)) {
+    if (!shouldProcessFile(file, settings, this.app.vault.configDir)) {
       return false;
     }
 
@@ -436,7 +429,7 @@ export class TimestampService {
 
   private collectVisibleMarkdownFiles(): TFile[] {
     return this.collectMarkdownFiles(this.app.vault.getRoot()).filter(
-      (file) => shouldProcessFile(file, this.getSettings()) && !this.hasHiddenPathSegment(file)
+      (file) => shouldProcessFile(file, this.getSettings(), this.app.vault.configDir) && !this.hasHiddenPathSegment(file)
     );
   }
 
@@ -475,7 +468,7 @@ export class TimestampService {
 
   private getActiveMarkdownFile(): TFile | null {
     const file = this.app.workspace.getActiveFile();
-    if (!file || !shouldProcessFile(file, this.getSettings())) {
+    if (!file || !shouldProcessFile(file, this.getSettings(), this.app.vault.configDir)) {
       return null;
     }
 
@@ -494,6 +487,5 @@ export class TimestampService {
       .join("\n");
 
     new Notice(`Preview: ${result.changed} of ${result.checked} files would update.\n${preview}`, 12000);
-    console.info("Frontmatter Timestamps preview", result.changes);
   }
 }

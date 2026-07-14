@@ -96,7 +96,7 @@ export default class FrontmatterTimestampsPlugin extends Plugin {
       updatedField: data?.updatedField ?? DEFAULT_SETTINGS.updatedField,
       timestampPropertyType: data?.timestampPropertyType ?? DEFAULT_SETTINGS.timestampPropertyType,
       dateFormat: data?.dateFormat ?? DEFAULT_SETTINGS.dateFormat,
-      ignoredPaths: migratedIgnoredPaths.filter((path: string) => path !== ".obsidian"),
+      ignoredPaths: migratedIgnoredPaths.filter((path: string) => path !== this.app.vault.configDir),
       debounceMs: data?.debounceMs ?? DEFAULT_SETTINGS.debounceMs,
       minUpdateIntervalMs: data?.minUpdateIntervalMs ?? DEFAULT_SETTINGS.minUpdateIntervalMs
     };
