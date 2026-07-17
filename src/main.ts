@@ -1,6 +1,6 @@
 import { Notice, Plugin } from "obsidian";
 import { ensureTimestampPropertyTypes, renameTimestampPropertyType } from "./property-types";
-import { DEFAULT_SETTINGS, TimestampPluginSettings, TimestampSettingTab } from "./settings";
+import { DEFAULT_SETTINGS, normalizeSettings, TimestampPluginSettings, TimestampSettingTab } from "./settings";
 import { TimestampService } from "./timestamp-service";
 
 export default class FrontmatterTimestampsPlugin extends Plugin {
@@ -90,16 +90,7 @@ export default class FrontmatterTimestampsPlugin extends Plugin {
 
   async loadSettings(): Promise<void> {
     const data = await this.loadData();
-    const migratedIgnoredPaths = data?.ignoredPaths ?? data?.ignoredFolders ?? DEFAULT_SETTINGS.ignoredPaths;
-    this.settings = {
-      createdField: data?.createdField ?? DEFAULT_SETTINGS.createdField,
-      updatedField: data?.updatedField ?? DEFAULT_SETTINGS.updatedField,
-      timestampPropertyType: data?.timestampPropertyType ?? DEFAULT_SETTINGS.timestampPropertyType,
-      dateFormat: data?.dateFormat ?? DEFAULT_SETTINGS.dateFormat,
-      ignoredPaths: migratedIgnoredPaths.filter((path: string) => path !== this.app.vault.configDir),
-      debounceMs: data?.debounceMs ?? DEFAULT_SETTINGS.debounceMs,
-      minUpdateIntervalMs: data?.minUpdateIntervalMs ?? DEFAULT_SETTINGS.minUpdateIntervalMs
-    };
+    this.settings = normalizeSettings(data, this.app.vault.configDir);
   }
 
   async saveSettings(): Promise<void> {

@@ -10,29 +10,12 @@ import {
 } from "obsidian";
 import FrontmatterTimestampsPlugin from "./main";
 import { normalizeIgnoredPath } from "./filters";
+import { DEFAULT_SETTINGS } from "./settings-model";
 import type { TimestampPropertyKind } from "./timestamp-service";
 
-export interface TimestampPluginSettings {
-  createdField: string;
-  updatedField: string;
-  timestampPropertyType: TimestampPropertyType;
-  dateFormat: string;
-  ignoredPaths: string[];
-  debounceMs: number;
-  minUpdateIntervalMs: number;
-}
-
-export type TimestampPropertyType = "text" | "date" | "datetime";
-
-export const DEFAULT_SETTINGS: TimestampPluginSettings = {
-  createdField: "created",
-  updatedField: "updated",
-  timestampPropertyType: "datetime",
-  dateFormat: "yyyy-MM-dd HH:mm",
-  ignoredPaths: ["Templates", "Utility", "Attachment", "Attachments"],
-  debounceMs: 1500,
-  minUpdateIntervalMs: 60000
-};
+export { DEFAULT_SETTINGS, normalizeSettings } from "./settings-model";
+export type { TimestampPluginSettings, TimestampPropertyType } from "./settings-model";
+import type { TimestampPropertyType } from "./settings-model";
 
 export class TimestampSettingTab extends PluginSettingTab {
   plugin: FrontmatterTimestampsPlugin;
@@ -80,12 +63,16 @@ export class TimestampSettingTab extends PluginSettingTab {
         );
     }
 
+    const hasEnabledProperty = this.plugin.settings.createdPropertyEnabled || this.plugin.settings.updatedPropertyEnabled;
     new Setting(containerEl)
       .setName("Apply settings to existing files")
-      .setDesc("Changing property names updates existing keys automatically. Use these buttons to refresh timestamp values with the current settings.")
+      .setDesc(hasEnabledProperty
+        ? "Changing property names updates existing keys automatically. Use these buttons to refresh enabled timestamp values with the current settings."
+        : "Enable at least one timestamp property to update existing files.")
       .addButton((button) =>
         button
           .setButtonText("Update folder")
+          .setDisabled(!hasEnabledProperty)
           .onClick(() => {
             void this.plugin.service.updateCurrentFolderTimestamps(false);
           })
@@ -93,6 +80,7 @@ export class TimestampSettingTab extends PluginSettingTab {
       .addButton((button) =>
         button
           .setButtonText("Update vault")
+          .setDisabled(!hasEnabledProperty)
           .onClick(() => {
             void this.plugin.service.updateVaultTimestamps(false);
           })
@@ -137,16 +125,49 @@ export class TimestampSettingTab extends PluginSettingTab {
     let draftName = savedName;
     const propertyKind: TimestampPropertyKind = key === "createdField" ? "created" : "updated";
 
-    const cardEl = containerEl.createDiv({ cls: "frontmatter-timestamps-rename-card" });
+    const enabled = key === "createdField"
+      ? this.plugin.settings.createdPropertyEnabled
+      : this.plugin.settings.updatedPropertyEnabled;
+    const cardEl = containerEl.createDiv({ cls: "fmt-property-card" });
+    if (!enabled) {
+      cardEl.addClass("fmt-property-card-disabled");
+    }
 
-    const headerEl = cardEl.createDiv({ cls: "frontmatter-timestamps-rename-header" });
+    const headerEl = cardEl.createDiv({ cls: "fmt-property-card-header" });
 
-    const iconEl = headerEl.createSpan();
+    const iconEl = headerEl.createSpan({ attr: { "aria-hidden": "true" } });
     setIcon(iconEl, key === "createdField" ? "calendar-plus" : "refresh-cw");
-    headerEl.createEl("div", { text: name, cls: "frontmatter-timestamps-rename-title" });
+    headerEl.createDiv({ text: name, cls: "fmt-property-card-title" });
 
-    const descriptionEl = cardEl.createDiv({
-      cls: "frontmatter-timestamps-rename-description",
+    const stateEl = headerEl.createDiv({ cls: "fmt-property-state" });
+    const stateIconEl = stateEl.createSpan({
+      cls: "fmt-property-state-icon",
+      attr: { "aria-hidden": "true" }
+    });
+    setIcon(stateIconEl, enabled ? "circle-check" : "circle-off");
+    stateEl.createSpan({
+      cls: "fmt-property-state-label",
+      text: enabled ? "Enabled" : "Disabled"
+    });
+
+    const toggleSetting = new Setting(stateEl).addToggle((toggle) => {
+      toggle.setValue(enabled);
+      toggle.toggleEl.setAttribute("aria-label", `${enabled ? "Disable" : "Enable"} ${name}`);
+      toggle.setTooltip(`${enabled ? "Disable" : "Enable"} ${name}`);
+      toggle.onChange(async (value) => {
+        if (key === "createdField") {
+          this.plugin.settings.createdPropertyEnabled = value;
+        } else {
+          this.plugin.settings.updatedPropertyEnabled = value;
+        }
+        await this.plugin.saveSettings();
+        this.display();
+      });
+    });
+    toggleSetting.settingEl.addClass("fmt-property-toggle-setting");
+
+    cardEl.createDiv({
+      cls: "fmt-property-card-description",
       text: "Renaming this property previews and applies a global frontmatter key rename. Typing does not change notes."
     });
 
@@ -154,13 +175,13 @@ export class TimestampSettingTab extends PluginSettingTab {
       type: "text",
       value: draftName
     });
-    inputEl.addClasses(["text-input", "frontmatter-timestamps-rename-input"]);
+    inputEl.addClasses(["text-input", "fmt-property-card-input"]);
     inputEl.placeholder = fallback;
     inputEl.addEventListener("input", () => {
       draftName = inputEl.value;
     });
 
-    const buttonsEl = cardEl.createDiv({ cls: "frontmatter-timestamps-rename-buttons" });
+    const buttonsEl = cardEl.createDiv({ cls: "fmt-property-card-buttons" });
 
     const applyButton = buttonsEl.createEl("button", { text: "Apply rename..." });
     applyButton.addEventListener("click", async () => {

@@ -1,4 +1,4 @@
-.frontmatter-timestamps-rename-card {
+.fmt-property-card {
   background: var(--background-secondary);
   border: 1px solid var(--background-modifier-border);
   border-radius: 8px;
@@ -6,28 +6,66 @@
   padding: 12px;
 }
 
-.frontmatter-timestamps-rename-header {
+.fmt-property-card-disabled {
+  background: var(--background-secondary-alt);
+  border-color: var(--background-modifier-border-hover);
+}
+
+.fmt-property-card-header {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
 }
 
-.frontmatter-timestamps-rename-title {
+.fmt-property-card-title {
+  flex: 1 1 auto;
   font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
-.frontmatter-timestamps-rename-description {
+.fmt-property-state {
+  align-items: center;
+  display: flex;
+  flex: 0 1 auto;
+  gap: 5px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.fmt-property-state-icon {
+  color: var(--text-muted);
+  display: inline-flex;
+}
+
+.fmt-property-state-label {
+  color: var(--text-normal);
+  white-space: nowrap;
+}
+
+.fmt-property-toggle-setting {
+  margin: 0;
+  padding: 0;
+}
+
+.fmt-property-card-description {
+  color: var(--text-normal);
   font-size: 12px;
   margin: 6px 0 8px;
-  opacity: 0.75;
 }
 
-.frontmatter-timestamps-rename-input {
+.fmt-property-card-disabled .fmt-property-card-description {
+  color: var(--text-muted);
+}
+
+.fmt-property-card-input {
   box-sizing: border-box;
   width: 100%;
 }
 
-.frontmatter-timestamps-rename-buttons {
+.fmt-property-card-buttons {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

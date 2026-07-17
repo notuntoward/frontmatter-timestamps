@@ -1,7 +1,7 @@
 {
   "id": "frontmatter-timestamps",
   "name": "Frontmatter Timestamps",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "minAppVersion": "1.5.0",
   "description": "Keeps created and updated frontmatter timestamps in sync with Markdown file events.",
   "author": "JQML",

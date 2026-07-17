@@ -1,10 +1,11 @@
 {
   "name": "frontmatter-timestamps",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Obsidian plugin for syncing frontmatter created and updated timestamps.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
+    "test": "node tests/run-tests.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "lint": "eslint .",
     "check": "npm run lint && tsc -noEmit -skipLibCheck"

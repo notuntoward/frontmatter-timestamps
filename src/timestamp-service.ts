@@ -1,4 +1,4 @@
-import { App, Notice, TAbstractFile, TFile, TFolder } from "obsidian";
+import { App, ButtonComponent, Modal, Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import {
   applyTimestampPlan,
   fixMalformedDatetimeQuoteLiteral,
@@ -8,6 +8,12 @@ import {
 } from "./frontmatter";
 import { formatTimestampForPropertyType } from "./format";
 import { isMarkdownFile, shouldProcessFile } from "./filters";
+import {
+  getEnabledTimestampFields,
+  getEnabledTimestampOptions,
+  hasEnabledTimestampProperty
+} from "./timestamp-options";
+import type { TimestampUpdateOptions } from "./timestamp-options";
 import type { TimestampPluginSettings } from "./settings";
 
 type Timer = number;
@@ -24,6 +30,7 @@ interface TimestampUpdateResult {
   changed: number;
   skipped: number;
   changes: Array<{ path: string; changes: TimestampChange[] }>;
+  enabledFields: string[];
 }
 
 export interface BatchMutationResult {
@@ -95,8 +102,12 @@ export class TimestampService {
     }
 
     const settings = this.getSettings();
+    if (!hasEnabledTimestampProperty(settings)) {
+      return;
+    }
+
     const previousWrite = this.lastAutomaticUpdatedWrite.get(file.path) ?? 0;
-    if (Date.now() - previousWrite < settings.minUpdateIntervalMs) {
+    if (settings.updatedPropertyEnabled && Date.now() - previousWrite < settings.minUpdateIntervalMs) {
       return;
     }
 
@@ -119,6 +130,10 @@ export class TimestampService {
   }
 
   async updateCurrentFile(forceCreated: boolean): Promise<void> {
+    if (!this.ensureEnabledTimestampProperty()) {
+      return;
+    }
+
     const file = this.getActiveMarkdownFile();
     if (!file) {
       new Notice("No active Markdown file.");
@@ -136,6 +151,11 @@ export class TimestampService {
   }
 
   async addMissingCreatedToCurrentFile(): Promise<void> {
+    if (!this.getSettings().createdPropertyEnabled) {
+      new Notice("Enable the Created timestamp property to add it to the current file.");
+      return;
+    }
+
     const file = this.getActiveMarkdownFile();
     if (!file) {
       new Notice("No active Markdown file.");
@@ -153,6 +173,10 @@ export class TimestampService {
   }
 
   async updateCurrentFolderTimestamps(previewOnly: boolean): Promise<void> {
+    if (!this.ensureEnabledTimestampProperty()) {
+      return;
+    }
+
     const activeFile = this.getActiveMarkdownFile();
     if (!activeFile) {
       new Notice("No active Markdown file.");
@@ -169,16 +193,20 @@ export class TimestampService {
     if (previewOnly) {
       this.showPreviewResult(result);
     } else {
-      new Notice(`Updated timestamp values in ${result.changed} of ${result.checked} Markdown files.`);
+      new Notice(this.getBulkUpdateNotice(result, "folder"));
     }
   }
 
   async updateVaultTimestamps(previewOnly: boolean): Promise<void> {
+    if (!this.ensureEnabledTimestampProperty()) {
+      return;
+    }
+
     const result = await this.updateFolderTimestamps(this.app.vault.getRoot(), previewOnly);
     if (previewOnly) {
       this.showPreviewResult(result);
     } else {
-      new Notice(`Updated timestamp values in ${result.changed} of ${result.checked} Markdown files in the vault.`);
+      new Notice(this.getBulkUpdateNotice(result, "vault"));
     }
   }
 
@@ -208,7 +236,7 @@ export class TimestampService {
       skippedExamples ? `\nSkipped examples:\n${skippedExamples}` : ""
     ].join("\n");
 
-    if (!window.confirm(message)) {
+    if (!(await confirmWithModal(this.app, message))) {
       return { ...result, cancelled: true };
     }
 
@@ -263,9 +291,17 @@ export class TimestampService {
 
   async fixMalformedDatetimeQuoteLiterals(): Promise<BatchMutationResult> {
     const settings = this.getSettings();
-    const fields = [settings.createdField, settings.updatedField].map((field) => field.trim()).filter(Boolean);
+    const fields = [
+      settings.createdPropertyEnabled ? settings.createdField : "",
+      settings.updatedPropertyEnabled ? settings.updatedField : ""
+    ].map((field) => field.trim()).filter(Boolean);
     const result = this.emptyBatchResult();
     const entries: MalformedDatetimeCleanupEntry[] = [];
+
+    if (fields.length === 0) {
+      new Notice("Enable at least one timestamp property to clean up timestamp values.");
+      return result;
+    }
 
     for (const file of this.collectVisibleMarkdownFiles()) {
       const cache = this.app.metadataCache.getFileCache(file);
@@ -284,7 +320,7 @@ export class TimestampService {
       return result;
     }
 
-    if (!window.confirm(`Fix malformed datetime quote literals in ${entries.length} Markdown file(s)?`)) {
+    if (!(await confirmWithModal(this.app, `Fix malformed datetime quote literals in ${entries.length} Markdown file(s)?`))) {
       return { ...result, cancelled: true };
     }
 
@@ -324,16 +360,22 @@ export class TimestampService {
   }
 
   private async updateFolderTimestamps(folder: TFolder, previewOnly: boolean): Promise<TimestampUpdateResult> {
-    const files = this.collectMarkdownFiles(folder).filter((file) => shouldProcessFile(file, this.getSettings(), this.app.vault.configDir));
+    const settings = this.getSettings();
+    if (!hasEnabledTimestampProperty(settings)) {
+      return this.emptyTimestampUpdateResult(settings);
+    }
+
+    const files = this.collectMarkdownFiles(folder).filter((file) => shouldProcessFile(file, settings, this.app.vault.configDir));
     const result: TimestampUpdateResult = {
       checked: files.length,
       changed: 0,
       skipped: 0,
-      changes: []
+      changes: [],
+      enabledFields: getEnabledTimestampFields(settings)
     };
 
     for (const file of files) {
-      const changes = await this.getPlannedChanges(file, true, false, true);
+      const changes = this.getPlannedChanges(file, true, false, true);
       if (changes.length === 0) {
         result.skipped += 1;
         continue;
@@ -357,14 +399,14 @@ export class TimestampService {
 
   private async writeTimestamps(
     file: TFile,
-    options: {
-      includeCreated: boolean;
-      forceCreated: boolean;
-      includeUpdated: boolean;
-      automatic: boolean;
-    }
+    options: TimestampUpdateOptions
   ): Promise<boolean> {
     const settings = this.getSettings();
+    const effectiveOptions = getEnabledTimestampOptions(settings, options);
+    if (!effectiveOptions.includeCreated && !effectiveOptions.includeUpdated) {
+      return false;
+    }
+
     if (!shouldProcessFile(file, settings, this.app.vault.configDir)) {
       return false;
     }
@@ -375,7 +417,7 @@ export class TimestampService {
     this.selfWrites.add(file.path);
     try {
       await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
-        const plan = planTimestampChanges(frontmatter, file, timestamp, settings, options);
+        const plan = planTimestampChanges(frontmatter, file, timestamp, settings, effectiveOptions);
         if (plan.changes.length === 0) {
           return;
         }
@@ -389,28 +431,34 @@ export class TimestampService {
       }
     }
 
-    if (changed && options.automatic && options.includeUpdated) {
+    if (changed && effectiveOptions.automatic && effectiveOptions.includeUpdated) {
       this.lastAutomaticUpdatedWrite.set(file.path, Date.now());
     }
 
     return changed;
   }
 
-  private async getPlannedChanges(
+  private getPlannedChanges(
     file: TFile,
     includeCreated: boolean,
     forceCreated: boolean,
     includeUpdated: boolean
-  ): Promise<TimestampChange[]> {
+  ): TimestampChange[] {
     const cache = this.app.metadataCache.getFileCache(file);
     const frontmatter = { ...(cache?.frontmatter ?? {}) };
     const settings = this.getSettings();
-    const timestamp = formatTimestampForPropertyType(new Date(), settings.timestampPropertyType, settings.dateFormat);
-    return planTimestampChanges(frontmatter, file, timestamp, settings, {
+    const options = getEnabledTimestampOptions(settings, {
       includeCreated,
       forceCreated,
-      includeUpdated
-    }).changes;
+      includeUpdated,
+      automatic: false
+    });
+    if (!options.includeCreated && !options.includeUpdated) {
+      return [];
+    }
+
+    const timestamp = formatTimestampForPropertyType(new Date(), settings.timestampPropertyType, settings.dateFormat);
+    return planTimestampChanges(frontmatter, file, timestamp, settings, options).changes;
   }
 
   private collectMarkdownFiles(folder: TFolder): TFile[] {
@@ -476,8 +524,9 @@ export class TimestampService {
   }
 
   private showPreviewResult(result: TimestampUpdateResult): void {
+    const fields = this.formatEnabledFields(result.enabledFields);
     if (result.changes.length === 0) {
-      new Notice(`Preview: no timestamp updates needed across ${result.checked} Markdown files.`, 7000);
+      new Notice(`Preview (${fields}): no timestamp updates needed across ${result.checked} Markdown files.`, 7000);
       return;
     }
 
@@ -486,6 +535,84 @@ export class TimestampService {
       .map(({ path, changes }) => `${path}: ${changes.map((change) => change.field).join(", ")}`)
       .join("\n");
 
-    new Notice(`Preview: ${result.changed} of ${result.checked} files would update.\n${preview}`, 12000);
+    new Notice(`Preview (${fields}): ${result.changed} of ${result.checked} files would update.\n${preview}`, 12000);
   }
+
+  private ensureEnabledTimestampProperty(): boolean {
+    if (hasEnabledTimestampProperty(this.getSettings())) {
+      return true;
+    }
+
+    new Notice("Enable at least one timestamp property to update existing files.");
+    return false;
+  }
+
+  private getBulkUpdateNotice(result: TimestampUpdateResult, scope: "folder" | "vault"): string {
+    const location = scope === "folder" ? "" : " in the vault";
+    return `Updated ${this.formatEnabledFields(result.enabledFields)} timestamp values in ${result.changed} of ${result.checked} Markdown files${location}.`;
+  }
+
+  private formatEnabledFields(fields: string[]): string {
+    return fields.length > 0 ? fields.join(" and ") : "no enabled";
+  }
+
+  private emptyTimestampUpdateResult(settings: TimestampPluginSettings): TimestampUpdateResult {
+    return {
+      checked: 0,
+      changed: 0,
+      skipped: 0,
+      changes: [],
+      enabledFields: getEnabledTimestampFields(settings)
+    };
+  }
+}
+
+class ConfirmationModal extends Modal {
+  private settled = false;
+
+  constructor(
+    app: App,
+    private readonly message: string,
+    private readonly resolveConfirmation: (confirmed: boolean) => void
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.contentEl.empty();
+    this.contentEl.createEl("pre", { text: this.message });
+
+    const buttonsEl = this.contentEl.createDiv({ cls: "modal-button-container" });
+    new ButtonComponent(buttonsEl)
+      .setButtonText("Cancel")
+      .onClick(() => {
+        this.finish(false);
+      });
+    new ButtonComponent(buttonsEl)
+      .setButtonText("Confirm")
+      .setCta()
+      .onClick(() => {
+        this.finish(true);
+      });
+  }
+
+  onClose(): void {
+    this.finish(false);
+  }
+
+  private finish(confirmed: boolean): void {
+    if (this.settled) {
+      return;
+    }
+
+    this.settled = true;
+    this.resolveConfirmation(confirmed);
+    this.close();
+  }
+}
+
+function confirmWithModal(app: App, message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    new ConfirmationModal(app, message, resolve).open();
+  });
 }

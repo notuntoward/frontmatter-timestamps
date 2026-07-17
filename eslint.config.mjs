@@ -37,7 +37,7 @@ export default defineConfig([
   },
   ...obsidianmd.configs.recommended,
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "tests/**/*.ts"],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
@@ -63,6 +63,16 @@ export default defineConfig([
     rules: {
       ...noisyTypeScriptRules,
       "@typescript-eslint/no-require-imports": "warn"
+    }
+  },
+  {
+    files: ["tests/**/*.mjs"],
+    rules: {
+      "no-console": "off",
+      "no-unsanitized/method": "off",
+      "no-undef": "off",
+      "obsidianmd/hardcoded-config-path": "off",
+      "obsidianmd/no-nodejs-modules": "off"
     }
   }
 ]);
