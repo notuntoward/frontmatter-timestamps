@@ -9,6 +9,7 @@ Frontmatter Timestamps is an Obsidian community plugin that keeps configured `cr
 - Uses Obsidian's `app.fileManager.processFrontMatter()` for note frontmatter changes.
 - Supports Date & time, Date, or Plain text timestamp property modes.
 - Lets you configure created/updated property names and ignored vault paths.
+- Can disable timestamp processing for Markdown files opened from outside the vault.
 - Provides independent Enabled/Disabled controls for the Created and Updated properties.
 - Provides preview and update commands for the current folder and entire vault.
 - Provides a safe property rename workflow with preview, confirmation, conflict skipping, and changed/skipped/failed reporting.
@@ -26,6 +27,10 @@ The Created and Updated property cards each have their own native toggle. Both a
 
 Automatic events and Update folder/Update vault process only enabled properties. If both properties are disabled, automatic activity produces no timestamp writes and bulk update actions return “Enable at least one timestamp property to update existing files.” When one property is enabled, bulk result notices identify the fields included in that run.
 
+## Files outside the vault
+
+The **Disable Frontmatter Timestamps for files outside this vault** setting is enabled by default. While enabled, Frontmatter Timestamps skips Markdown files opened from outside the current vault. Turn it off to allow this plugin to update timestamps in those files. This setting is available in Obsidian Desktop 1.14.2 and newer. Folder and vault bulk commands continue to operate only on files in the current vault.
+
 ## Installation
 
 ### From Obsidian Community Plugins
@@ -41,7 +46,7 @@ Once published in the Obsidian Community Plugin directory, install it from Obsid
 
 ## Usage
 
-After enabling the plugin, new and modified Markdown notes outside ignored paths are processed automatically. By default, the plugin uses:
+After enabling the plugin, new and modified Markdown notes in the current vault and outside ignored paths are processed automatically. Files opened from outside the vault are skipped while **Disable Frontmatter Timestamps for files outside this vault** is enabled. By default, the plugin uses:
 
 - `created` for the created timestamp;
 - `updated` for the updated timestamp;

@@ -10,6 +10,7 @@ import {
 } from "obsidian";
 import FrontmatterTimestampsPlugin from "./main";
 import { normalizeIgnoredPath } from "./filters";
+import { supportsExternalFileHandling } from "./obsidian-compat";
 import { DEFAULT_SETTINGS } from "./settings-model";
 import type { TimestampPropertyKind } from "./timestamp-service";
 
@@ -31,6 +32,20 @@ export class TimestampSettingTab extends PluginSettingTab {
 
     this.displayTimestampFieldSetting(containerEl, "createdField", "Created property", DEFAULT_SETTINGS.createdField);
     this.displayTimestampFieldSetting(containerEl, "updatedField", "Updated property", DEFAULT_SETTINGS.updatedField);
+
+    if (supportsExternalFileHandling()) {
+      new Setting(containerEl)
+        .setName("Disable frontmatter timestamps for files outside this vault")
+        .setDesc("When enabled, the plugin makes no changes to Markdown files opened from outside this vault. Turn it off to allow timestamp updates to those files.")
+        .addToggle((toggle) =>
+          toggle
+            .setValue(this.plugin.settings.disableExternalFiles)
+            .onChange(async (value) => {
+              this.plugin.settings.disableExternalFiles = value;
+              await this.plugin.saveSettings();
+            })
+        );
+    }
 
     new Setting(containerEl)
       .setName("Timestamp property type")

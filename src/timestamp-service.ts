@@ -1,4 +1,4 @@
-import { App, ButtonComponent, Modal, Notice, TAbstractFile, TFile, TFolder } from "obsidian";
+import { App, ButtonComponent, MarkdownView, Modal, Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import {
   applyTimestampPlan,
   fixMalformedDatetimeQuoteLiteral,
@@ -75,7 +75,7 @@ export class TimestampService {
   }
 
   async handleCreate(file: TAbstractFile): Promise<void> {
-    if (!isMarkdownFile(file) || !shouldProcessFile(file, this.getSettings(), this.app.vault.configDir)) {
+    if (!isMarkdownFile(file) || !shouldProcessFile(file, this.getSettings(), this.app.vault.configDir, this.app.vault)) {
       return;
     }
 
@@ -88,7 +88,7 @@ export class TimestampService {
   }
 
   handleModify(file: TAbstractFile): void {
-    if (!isMarkdownFile(file) || !shouldProcessFile(file, this.getSettings(), this.app.vault.configDir)) {
+    if (!isMarkdownFile(file) || !shouldProcessFile(file, this.getSettings(), this.app.vault.configDir, this.app.vault)) {
       return;
     }
 
@@ -243,9 +243,17 @@ export class TimestampService {
     this.isBulkRenaming = true;
     try {
       for (const entry of changedEntries) {
+        if (!shouldProcessFile(entry.file, this.getSettings(), this.app.vault.configDir, this.app.vault)) {
+          result.skipped += 1;
+          result.reasons.push(`${entry.path}: file is no longer in this vault`);
+          continue;
+        }
         let fileChanged = false;
         let skipReason = "";
         this.selfWrites.add(entry.file.path);
+
+        const openViews = this.getOpenMarkdownViews(entry.file);
+        await this.flushDirtyViews(openViews);
 
         try {
           await this.app.fileManager.processFrontMatter(entry.file, (frontmatter) => {
@@ -266,6 +274,7 @@ export class TimestampService {
           });
 
           if (fileChanged) {
+            await this.reloadOpenViews(openViews, entry.file);
             result.changed += 1;
           } else {
             result.skipped += 1;
@@ -325,8 +334,16 @@ export class TimestampService {
     }
 
     for (const entry of entries) {
+      if (!shouldProcessFile(entry.file, this.getSettings(), this.app.vault.configDir, this.app.vault)) {
+        result.skipped += 1;
+        result.reasons.push(`${entry.file.path}: file is no longer in this vault`);
+        continue;
+      }
       let fileChanged = false;
       this.selfWrites.add(entry.file.path);
+
+      const openViews = this.getOpenMarkdownViews(entry.file);
+      await this.flushDirtyViews(openViews);
 
       try {
         await this.app.fileManager.processFrontMatter(entry.file, (frontmatter) => {
@@ -339,6 +356,7 @@ export class TimestampService {
         });
 
         if (fileChanged) {
+          await this.reloadOpenViews(openViews, entry.file);
           result.changed += 1;
         } else {
           result.skipped += 1;
@@ -365,7 +383,9 @@ export class TimestampService {
       return this.emptyTimestampUpdateResult(settings);
     }
 
-    const files = this.collectMarkdownFiles(folder).filter((file) => shouldProcessFile(file, settings, this.app.vault.configDir));
+    const files = this.collectMarkdownFiles(folder).filter(
+      (file) => shouldProcessFile(file, settings, this.app.vault.configDir, this.app.vault)
+    );
     const result: TimestampUpdateResult = {
       checked: files.length,
       changed: 0,
@@ -407,9 +427,12 @@ export class TimestampService {
       return false;
     }
 
-    if (!shouldProcessFile(file, settings, this.app.vault.configDir)) {
+    if (!shouldProcessFile(file, settings, this.app.vault.configDir, this.app.vault)) {
       return false;
     }
+
+    const openViews = this.getOpenMarkdownViews(file);
+    await this.flushDirtyViews(openViews);
 
     const timestamp = formatTimestampForPropertyType(new Date(), settings.timestampPropertyType, settings.dateFormat);
     let changed = false;
@@ -425,6 +448,10 @@ export class TimestampService {
         applyTimestampPlan(frontmatter, plan);
         changed = true;
       });
+
+      if (changed) {
+        await this.reloadOpenViews(openViews, file);
+      }
     } finally {
       if (!changed) {
         this.selfWrites.delete(file.path);
@@ -477,7 +504,7 @@ export class TimestampService {
 
   private collectVisibleMarkdownFiles(): TFile[] {
     return this.collectMarkdownFiles(this.app.vault.getRoot()).filter(
-      (file) => shouldProcessFile(file, this.getSettings(), this.app.vault.configDir) && !this.hasHiddenPathSegment(file)
+      (file) => shouldProcessFile(file, this.getSettings(), this.app.vault.configDir, this.app.vault) && !this.hasHiddenPathSegment(file)
     );
   }
 
@@ -516,7 +543,7 @@ export class TimestampService {
 
   private getActiveMarkdownFile(): TFile | null {
     const file = this.app.workspace.getActiveFile();
-    if (!file || !shouldProcessFile(file, this.getSettings(), this.app.vault.configDir)) {
+    if (!file || !shouldProcessFile(file, this.getSettings(), this.app.vault.configDir, this.app.vault)) {
       return null;
     }
 
@@ -554,6 +581,41 @@ export class TimestampService {
 
   private formatEnabledFields(fields: string[]): string {
     return fields.length > 0 ? fields.join(" and ") : "no enabled";
+  }
+
+  private getOpenMarkdownViews(file: TFile): MarkdownView[] {
+    const views: MarkdownView[] = [];
+    if (typeof this.app.workspace?.iterateAllLeaves !== "function") {
+      return views;
+    }
+
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (leaf.view instanceof MarkdownView && leaf.view.file?.path === file.path) {
+        views.push(leaf.view);
+      }
+    });
+
+    return views;
+  }
+
+  private async flushDirtyViews(views: MarkdownView[]): Promise<void> {
+    for (const view of views) {
+      const dirtyView = view as MarkdownView & { dirty?: boolean };
+      if (dirtyView.dirty && typeof view.save === "function") {
+        await view.save();
+      }
+    }
+  }
+
+  private async reloadOpenViews(views: MarkdownView[], file: TFile): Promise<void> {
+    for (const view of views) {
+      const internalView = view as MarkdownView & {
+        loadFileInternal?: (file: TFile, preserveHistory: boolean) => Promise<void> | void;
+      };
+      if (typeof internalView.loadFileInternal === "function") {
+        await internalView.loadFileInternal(file, false);
+      }
+    }
   }
 
   private emptyTimestampUpdateResult(settings: TimestampPluginSettings): TimestampUpdateResult {

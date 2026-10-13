@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { build } from "esbuild";
 
@@ -11,7 +13,7 @@ const bundle = await build({
   format: "cjs",
   write: false
 });
-const testDirectory = await fs.mkdtemp("/tmp/frontmatter-timestamps-tests-");
+const testDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "frontmatter-timestamps-tests-"));
 const bundlePath = path.join(testDirectory, "test-api.cjs");
 await fs.writeFile(bundlePath, bundle.outputFiles[0].contents);
 const api = createRequire(import.meta.url)(bundlePath);
@@ -22,6 +24,7 @@ const baseSettings = {
   updatedField: "updated",
   createdPropertyEnabled: true,
   updatedPropertyEnabled: true,
+  disableExternalFiles: true,
   timestampPropertyType: "datetime",
   dateFormat: "yyyy-MM-dd HH:mm",
   ignoredPaths: [],
@@ -56,6 +59,9 @@ function testMigration() {
     minUpdateIntervalMs: 5000
   };
   const migrated = api.normalizeSettings(legacy, configDir);
+  assert.equal(migrated.disableExternalFiles, true);
+  assert.equal(api.normalizeSettings({ disableExternalFiles: false }, configDir).disableExternalFiles, false);
+  assert.equal(api.normalizeSettings({ processExternalFiles: true }, configDir).disableExternalFiles, true);
   assert.equal(migrated.createdPropertyEnabled, true);
   assert.equal(migrated.updatedPropertyEnabled, true);
   assert.deepEqual(migrated.ignoredPaths, ["Archive"]);
@@ -114,6 +120,138 @@ function testManualBulkSelectionAndSafety() {
   assert.deepEqual(changedFields(missingDisabled), ["updated"]);
 }
 
+async function testExternalFilePolicy() {
+  const vault = {};
+  const inVaultFile = { vault, path: "Projects/README.md" };
+  const externalFile = { vault, path: "C:/outside-vault/README.md" };
+  const lookup = (path) => path === externalFile.path ? externalFile : inVaultFile;
+
+  // Index identity can succeed for an external file, so desktop also checks the real path.
+  assert.equal(api.isFileInVaultIndex(inVaultFile, vault, lookup(inVaultFile.path)), true);
+  assert.equal(api.isFileInVaultIndex(externalFile, vault, lookup(externalFile.path)), true);
+  assert.equal(api.isFileInVaultIndex(externalFile, vault, null), false);
+
+  const identityRealpath = (path) => path;
+  assert.equal(
+    api.isPathWithinVault("C:/Vault", "C:/Vault/Projects/README.md", path.win32, identityRealpath),
+    true
+  );
+  assert.equal(
+    api.isPathWithinVault("C:/Vault", externalFile.path, path.win32, identityRealpath),
+    false
+  );
+  assert.equal(
+    api.isPathWithinVault("C:/Vault", "C:/Vault-other/README.md", path.win32, identityRealpath),
+    false
+  );
+  assert.equal(
+    api.isPathWithinVault("/vault", "/vault/Projects/README.md", path.posix, identityRealpath),
+    true
+  );
+  assert.equal(
+    api.isPathWithinVault("/vault", "/outside/README.md", path.posix, identityRealpath),
+    false
+  );
+
+  const resolveJunction = (candidate) => candidate.replace(
+    /^C:\\Vault\\Junction\\/i,
+    "C:\\Outside\\"
+  );
+  assert.equal(
+    api.isPathWithinVault("C:/Vault", "C:/Vault/Junction/README.md", path.win32, resolveJunction),
+    false
+  );
+  assert.equal(
+    api.isPathWithinVault("/vault", "/vault/Linked/README.md", path.posix, (candidate) =>
+      candidate.replace("/vault/Linked/", "/outside/")
+    ),
+    false
+  );
+  assert.equal(
+    api.isPathWithinVault("/vault", "/vault/README.md", path.posix, () => {
+      throw new Error("path cannot be resolved");
+    }),
+    null
+  );
+
+  const externalLocation = api.classifyFileLocation(
+    api.isFileInVaultIndex(externalFile, vault, lookup(externalFile.path)),
+    true,
+    api.isPathWithinVault("C:/Vault", externalFile.path, path.win32, identityRealpath)
+  );
+  assert.equal(externalLocation, "outside-vault");
+  assert.equal(api.classifyFileLocation(true, true, null), "unknown");
+  assert.equal(api.classifyFileLocation(false, true, true), "unknown");
+  assert.equal(api.classifyFileLocation(true, false, null), "in-vault");
+  assert.equal(api.classifyFileLocation(false, false, null), "unknown");
+
+  const testRoot = await fs.mkdtemp(path.join(os.tmpdir(), "frontmatter-timestamps-paths-"));
+  try {
+    const nativeVault = path.join(testRoot, "vault");
+    const outsideDirectory = path.join(testRoot, "outside");
+    const linkedDirectory = path.join(nativeVault, "linked");
+    const nativeVaultFile = path.join(nativeVault, "note.md");
+    const outsideFile = path.join(outsideDirectory, "README.md");
+    await fs.mkdir(nativeVault, { recursive: true });
+    await fs.mkdir(outsideDirectory, { recursive: true });
+    await fs.writeFile(nativeVaultFile, "inside\n");
+    await fs.writeFile(outsideFile, "outside\n");
+    await fs.symlink(outsideDirectory, linkedDirectory, process.platform === "win32" ? "junction" : "dir");
+
+    assert.equal(api.isPathWithinVault(nativeVault, nativeVaultFile, path, fsSync.realpathSync), true);
+    assert.equal(api.isPathWithinVault(nativeVault, outsideFile, path, fsSync.realpathSync), false);
+    assert.equal(
+      api.isPathWithinVault(nativeVault, path.join(linkedDirectory, "README.md"), path, fsSync.realpathSync),
+      false
+    );
+  } finally {
+    await fs.rm(testRoot, { recursive: true, force: true });
+  }
+
+  const inVaultPath = inVaultFile.path;
+  const externalPath = externalFile.path;
+  assert.equal(api.shouldProcessFilePath(inVaultPath, "md", settings(), configDir, "in-vault"), true);
+  assert.equal(api.shouldProcessFilePath(externalPath, "md", settings(), configDir, "outside-vault", true), false);
+  assert.equal(
+    api.shouldProcessFilePath(
+      externalPath,
+      "md",
+      settings({ disableExternalFiles: false }),
+      configDir,
+      "outside-vault",
+      true
+    ),
+    true
+  );
+  assert.equal(
+    api.shouldProcessFilePath(
+      externalPath,
+      "md",
+      settings({ disableExternalFiles: false }),
+      configDir,
+      "outside-vault",
+      false
+    ),
+    false
+  );
+  assert.equal(
+    api.shouldProcessFilePath(
+      externalPath,
+      "md",
+      settings({ disableExternalFiles: false }),
+      configDir,
+      "unknown",
+      true
+    ),
+    false
+  );
+  assert.equal(
+    api.shouldProcessFilePath(inVaultPath, "md", settings({ ignoredPaths: ["Projects"] }), configDir, "in-vault"),
+    false
+  );
+  assert.equal(api.shouldProcessFilePath(externalPath, "txt", settings(), configDir, "outside-vault", true), false);
+}
+
 function testRenameStateAndUiInvariants() {
   const disabled = settings({ createdPropertyEnabled: false, updatedPropertyEnabled: false });
   const renamed = { ...disabled, createdField: "made" };
@@ -153,6 +291,7 @@ async function testImplementationSafety() {
 testMigration();
 testAutomaticPlans();
 testManualBulkSelectionAndSafety();
+await testExternalFilePolicy();
 testRenameStateAndUiInvariants();
 await testImplementationSafety();
-process.stdout.write("Frontmatter Timestamps tests: 5 suites passed.\n");
+process.stdout.write("Frontmatter Timestamps tests: 6 suites passed.\n");

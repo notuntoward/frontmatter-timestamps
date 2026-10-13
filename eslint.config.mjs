@@ -32,7 +32,8 @@ export default defineConfig([
       "main.js",
       "node_modules/**",
       "dist/**",
-      "coverage/**"
+      "coverage/**",
+      ".delta/**"
     ]
   },
   ...obsidianmd.configs.recommended,

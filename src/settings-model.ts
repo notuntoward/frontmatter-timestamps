@@ -3,6 +3,7 @@ export interface TimestampPluginSettings {
   updatedField: string;
   createdPropertyEnabled: boolean;
   updatedPropertyEnabled: boolean;
+  disableExternalFiles: boolean;
   timestampPropertyType: TimestampPropertyType;
   dateFormat: string;
   ignoredPaths: string[];
@@ -17,6 +18,7 @@ export const DEFAULT_SETTINGS: TimestampPluginSettings = {
   updatedField: "updated",
   createdPropertyEnabled: true,
   updatedPropertyEnabled: true,
+  disableExternalFiles: true,
   timestampPropertyType: "datetime",
   dateFormat: "yyyy-MM-dd HH:mm",
   ignoredPaths: ["Templates", "Utility", "Attachment", "Attachments"],
@@ -33,6 +35,7 @@ export function normalizeSettings(data: unknown, configDir: string): TimestampPl
     updatedField: getString(raw.updatedField, DEFAULT_SETTINGS.updatedField),
     createdPropertyEnabled: getBoolean(raw.createdPropertyEnabled, DEFAULT_SETTINGS.createdPropertyEnabled),
     updatedPropertyEnabled: getBoolean(raw.updatedPropertyEnabled, DEFAULT_SETTINGS.updatedPropertyEnabled),
+    disableExternalFiles: getBoolean(raw.disableExternalFiles, DEFAULT_SETTINGS.disableExternalFiles),
     timestampPropertyType: getTimestampPropertyType(raw.timestampPropertyType),
     dateFormat: getString(raw.dateFormat, DEFAULT_SETTINGS.dateFormat),
     ignoredPaths,
